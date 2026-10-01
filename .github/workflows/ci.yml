@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: "1.9.8"
+  CHECKOV_VERSION: "3.3.20"
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+  validate:
+    name: Validate ${{ matrix.directory }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        directory:
+          - task1-terraform-module
+          - task1-terraform-module/bootstrap
+          - task2-aws-security
+          - task3-lambda-troubleshooting/terraform
+          - modules/security-group
+          - modules/kms-key
+          - modules/vpc
+          - modules/ec2
+          - modules/rds
+          - modules/iam-instance-role
+          - modules/cloudtrail
+          - modules/aws-config
+          - modules/security-alerting
+          - modules/secret
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform -chdir=${{ matrix.directory }} init -backend=false -input=false
+
+      # task 1 has no settings for the default workspace
+      - name: terraform validate
+        run: terraform -chdir=${{ matrix.directory }} validate
+        env:
+          TF_WORKSPACE: staging
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Set up tflint
+        uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+
+      - name: tflint
+        run: tflint --recursive --minimum-failure-severity=warning
+        env:
+          TF_WORKSPACE: staging
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # Pinned, and run directly rather than through the action, so CI and a
+      # local run use the same version and the same config resolution.
+      - name: checkov
+        run: |
+          pip install checkov==${{ env.CHECKOV_VERSION }}
+          checkov --config-file .checkov.yaml
+
+      - name: Suppressions all fire
+        run: python3 scripts/check-suppressions.py
+
+  test:
+    name: Lambda tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r task3-lambda-troubleshooting/tests/requirements.txt
+
+      - name: pytest
+        run: pytest task3-lambda-troubleshooting/tests -v
+        working-directory: .

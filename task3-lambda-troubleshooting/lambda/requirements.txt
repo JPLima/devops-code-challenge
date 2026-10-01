@@ -1,0 +1,3 @@
+# boto3 ships in the Lambda runtime and is not packaged into the zip. This is
+# for local development and the tests.
+boto3>=1.34.0

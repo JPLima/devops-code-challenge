@@ -1,0 +1,29 @@
+directory:
+  - .
+
+framework:
+  - terraform
+
+skip-path:
+  # the challenge's original broken files, kept as evidence
+  - task3-lambda-troubleshooting/original
+
+skip-check:
+  # modules are pinned by tag, not commit hash. A tag is mutable, so this
+  # needs a tag protection rule on v* to hold up.
+  - CKV_TF_1
+
+  # S3 access logging. Needs a target bucket that is itself unlogged, and the
+  # read access these buckets get is already in the CloudTrail data events.
+  - CKV_AWS_18
+
+  # Cross-region replication. Doubles storage cost for a disaster recovery
+  # posture nobody specified.
+  - CKV_AWS_144
+
+  # S3 event notifications. Nothing here consumes object events.
+  - CKV2_AWS_62
+
+  # Secrets Manager rotation. Needs a rotation lambda and a database that
+  # accepts the new credential, which is more than this challenge covers.
+  - CKV2_AWS_57
